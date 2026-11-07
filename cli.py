@@ -36,6 +36,8 @@ def main() -> None:
     ap.add_argument("--apply", action="store_true", help="write changes (default: dry run)")
     ap.add_argument("--no-backup", action="store_true")
     ap.add_argument("--no-vacuum", action="store_true")
+    ap.add_argument("--ignore-check", action="store_true",
+                    help="apply even if the render check finds cards that could look different")
     args = ap.parse_args()
 
     path = Path(args.collection)
@@ -55,6 +57,10 @@ def main() -> None:
                 sys.exit(f"Note type {name!r} not found")
             plan = plan_notetype(col, notetype)
             print(plan.summary())
+            print(plan.check.report())
+            if args.apply and plan.has_changes and not plan.check.identical and not args.ignore_check:
+                sys.exit("Not applied: some cards could look different. "
+                         "Re-run with --ignore-check to apply anyway.")
             if args.apply and plan.has_changes:
                 apply_plan(col, plan)
                 css_copy = path.with_name(f"yomitan-css-dedup-{name}.css")

@@ -45,7 +45,7 @@ def save_css_copies(plans: list) -> None:
 
 def on_planned(result: tuple[list, list[str]], config: dict) -> None:
     plans, missing = result
-    lines = [p.summary() for p in plans]
+    lines = [f"{p.summary()}\n\n{p.check.report()}" for p in plans]
     if missing:
         lines.append(f"Note types not found: {', '.join(missing)} "
                      "(change them in Tools → Add-ons → Yomitan CSS Dedup → Config).")
@@ -53,10 +53,14 @@ def on_planned(result: tuple[list, list[str]], config: dict) -> None:
     if not plans:
         showInfo("Nothing to do.\n\n" + "\n\n".join(lines), parent=mw, title=ADDON_NAME)
         return
-    question = ("\n\n".join(lines)
-                + "\n\nApply these changes? Card text and formatting stay the same. "
-                  "You can undo with Edit → Undo.")
-    if not askUser(question, parent=mw, title=ADDON_NAME):
+    identical = all(p.check.identical for p in plans)
+    if identical:
+        advice = "All cards keep exactly the same CSS rules."
+    else:
+        advice = ("Some cards could look different, see the render check above. "
+                  "Check a few of them after applying; Edit → Undo reverts everything.")
+    question = "\n\n".join(lines) + f"\n\n{advice}\n\nApply these changes?"
+    if not askUser(question, parent=mw, title=ADDON_NAME, defaultno=not identical):
         return
 
     applied: list = []

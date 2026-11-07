@@ -14,24 +14,48 @@ Yomitan CSS Dedup stores that CSS once in the note type instead:
 
 | | Before | After |
 |---|---|---|
-| Note fields | 287.6 MB | 107.4 MB |
-| `collection.anki2` | 314.5 MB | 132.5 MB |
+| Note fields | 287.6 MB | 113.2 MB |
+| `collection.anki2` | 314.5 MB | 138.2 MB |
 
 ## What it does
 
-It moves the `<style>` blocks out of the note fields into the note type's
+It moves the dictionary stylesheets out of the note fields into the note type's
 Styling:
 
-- Stylesheets of a dictionary (they contain `data-dictionary="…"`) are stored
-  once per dictionary. When notes contain different versions of a dictionary's
-  stylesheet, the version used by the most notes is kept.
-- Other `<style>` blocks are only merged with exact copies of themselves, never
-  with each other.
-- Stylesheets are kept whole and appended at the end of the Styling, which is
-  the same position in the cascade they had inside the card.
+- Rules limited to one dictionary (every selector contains
+  `[data-dictionary="…"]`) are moved and stored once per dictionary. When notes
+  contain different versions of a dictionary's stylesheet, the version used by
+  the most notes is kept. These rules can only match that dictionary's entries,
+  so it doesn't matter that every card now loads them.
+- All other rules stay in the note as a small `<style>` block (each rule once),
+  for example Yomitan's compact glossary rules, which match every glossary list
+  on a card. That way they keep reaching exactly the notes they reached before.
+  `<style>` blocks without any rule limited to a dictionary aren't touched.
+- The moved stylesheets are appended at the end of the Styling, which is the same
+  position in the cascade they had inside the card.
 
 Glossary text, inline styles, `data-*` attributes and everything else stay as they are.
 Running it again only processes what is new.
+
+## Render check
+
+Before anything is written, a render check compares for every note the CSS rules
+that could apply to it before and after. Since only `<style>` blocks are removed,
+this finds every card that could look different:
+
+- a note had another version of a dictionary's stylesheet than the one kept,
+- a note has entries of a dictionary but never had its stylesheet,
+- rules that aren't limited to one dictionary (e.g. Yomitan's compact glossary
+  rules) would reach notes that didn't have them.
+
+A rule only counts for a note if it can match it: rules for a dictionary only
+for notes with entries from it, rules needing a class only if the class appears
+in the note or the card template. Rules browsers ignore anyway (broken by a stray
+`<br>`) are skipped.
+
+The add-on shows the result in the confirmation dialog and defaults to "No" when
+cards could change. `cli.py --apply` refuses in that case unless you add
+`--ignore-check`.
 
 ## Install as an Anki add-on
 
@@ -93,7 +117,7 @@ Older Anki installs without the launcher don't have that Python; use a virtual
 environment with `pip install anki==<your Anki version>` instead.
 
 Options: `--collection PATH`, `--notetype NAME` (repeatable, default `Yomitan`),
-`--no-backup`, `--no-vacuum`. Afterwards open Anki and sync.
+`--no-backup`, `--no-vacuum`, `--ignore-check`. Afterwards open Anki and sync.
 
 ## Good to know
 
@@ -105,7 +129,10 @@ Options: `--collection PATH`, `--notetype NAME` (repeatable, default `Yomitan`),
   using `cli.py`.
 - Yomitan turns line breaks inside some stylesheets into `<br>`, which breaks a few
   rules. Those versions are rare, so the most-used (clean) version is normally the
-  one that is kept.
+  one that is kept, and cards that had a broken version get the complete rules.
+- If notes have different versions of a dictionary's stylesheet, cards with the
+  less common version get the most common one. The render check lists how many
+  notes that affects per dictionary; check a few of them after applying.
 
 ## Development
 

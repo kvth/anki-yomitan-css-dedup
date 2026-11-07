@@ -75,14 +75,35 @@ class StyleBlockTests(unittest.TestCase):
         self.assertEqual(plan.sheets, 2)
         self.assertEqual(col.css.count(SHEET_B), 1)
 
-    def test_blocks_without_dictionary_only_merge_exact_copies(self):
-        plain1, plain2 = "b { color: red; }", "i { color: blue; }"
-        col = FakeCollection([[f"<style>{plain1}</style>"], [f"<style>{plain1}</style>"],
-                              [f"<style>{plain2}</style>"]])
+    def test_blocks_without_dictionary_stay_untouched(self):
+        plain = "<style>b { color: red; }</style>"
+        col = FakeCollection([[plain + "<b>x</b>"]] * 2)
         plan = run(col)
-        self.assertEqual(plan.sheets, 2)
-        self.assertEqual(col.css.count(plain1), 1)
-        self.assertEqual(col.css.count(plain2), 1)
+        self.assertFalse(plan.has_changes)
+        self.assertEqual(col.notes[0][0], [plain + "<b>x</b>"])
+
+    def test_rules_not_limited_to_a_dictionary_stay_in_their_notes(self):
+        sheet_a = SHEET_A1 + "\n" + COMPACT
+        col = FakeCollection([[f"<style>{sheet_a}</style>{ENTRY_A}"],
+                              [f"<style>{SHEET_B}</style>{ENTRY_B}"]])
+        plan = run(col)
+        self.assertEqual(col.notes[0][0], [f"<style>{COMPACT}</style>{ENTRY_A}"])
+        self.assertEqual(col.notes[1][0], [ENTRY_B])
+        self.assertNotIn("display: inline", col.css)
+        self.assertTrue(plan.check.identical, plan.check.report())
+
+    def test_kept_rules_appear_once_per_field(self):
+        sheet_a, sheet_b = SHEET_A1 + "\n" + COMPACT, SHEET_B + "\n" + COMPACT
+        col = FakeCollection([[f"<style>{sheet_a}</style><style>{sheet_b}</style>{ENTRY_A}{ENTRY_B}"]])
+        run(col)
+        self.assertEqual(col.notes[0][0], [f"<style>{COMPACT}</style>{ENTRY_A}{ENTRY_B}"])
+
+    def test_at_rule_moves_only_if_everything_inside_is_scoped(self):
+        scoped = '@media (max-width: 600px) { .yomitan-glossary [data-dictionary="A"] b { color: red; } }'
+        mixed = '@media print { .yomitan-glossary [data-dictionary="A"] b { color: red; } ul { margin: 0; } }'
+        moved, rest = dedup.split_sheet(scoped + "\n" + mixed)
+        self.assertEqual(moved, scoped)
+        self.assertEqual(rest, [mixed])
 
     def test_rerun_is_noop_and_keeps_sheets(self):
         col = FakeCollection([[f"<style>{SHEET_A1}</style><span style=\"color:red\">a</span>"]] * 3)
@@ -113,6 +134,63 @@ class UntouchedTests(unittest.TestCase):
         plan = run(col)
         self.assertFalse(plan.has_changes)
         self.assertEqual(col.css, "body { margin: 0; }")
+
+
+COMPACT = '.yomitan-glossary ul[data-sc-content="glossary"] { display: inline; }'
+ENTRY_A = '<div class="yomitan-glossary"><ol><li data-dictionary="A"><ul data-sc-content="glossary"><li>x</li></ul></li></ol></div>'
+ENTRY_B = ENTRY_A.replace('"A"', '"B"')
+
+
+class RenderCheckTests(unittest.TestCase):
+    def check(self, fields_per_note):
+        col = FakeCollection(fields_per_note)
+        return dedup.plan_notetype(col, col.notetype()).check
+
+    def test_same_sheet_everywhere_is_identical(self):
+        result = self.check([[f"<style>{SHEET_A1}</style>{ENTRY_A}"]] * 3)
+        self.assertTrue(result.identical, result.report())
+
+    def test_other_version_is_reported_for_its_dictionary(self):
+        result = self.check([[f"<style>{SHEET_A1}</style>{ENTRY_A}"]] * 2
+                            + [[f"<style>{SHEET_A2}</style>{ENTRY_A}"]])
+        self.assertEqual(result.notes_affected, 1)
+        self.assertEqual(result.notes_by_scope["A"], 1)
+
+    def test_global_rules_removed_from_note_type_css_are_reported(self):
+        # An earlier version moved a global rule into the note type CSS; replacing
+        # that sheet with a scoped-only version takes the rule away from all notes.
+        old_section = dedup.SHEET_HEADER.format("A") + "\n" + SHEET_A2 + "\n" + COMPACT
+        col = FakeCollection([[f"<style>{SHEET_A1}</style>{ENTRY_A}"]],
+                             css=dedup.set_section("body { margin: 0; }", old_section))
+        result = dedup.plan_notetype(col, col.notetype()).check
+        self.assertEqual(result.notes_by_scope[""], 1)
+        self.assertIn("Rules not limited to one dictionary", result.report())
+
+    def test_rule_needing_a_missing_class_does_not_count(self):
+        sheet_a = SHEET_A1 + "\n" + COMPACT
+        result = self.check([[f"<style>{sheet_a}</style>{ENTRY_A}"],
+                             [f"<style>{SHEET_B}</style><p>no glossary here</p>"]])
+        self.assertTrue(result.identical, result.report())
+
+    def test_entries_without_their_sheet_are_reported(self):
+        result = self.check([[f"<style>{SHEET_A1}</style>{ENTRY_A}"], [ENTRY_A]])
+        self.assertEqual(result.notes_by_scope["A"], 1)
+
+    def test_stray_br_in_declarations_is_ignored(self):
+        broken = SHEET_A1.replace("color: red;", "color: red;<br>")
+        result = self.check([[f"<style>{SHEET_A1}</style>{ENTRY_A}"]] * 2
+                            + [[f"<style>{broken}</style>{ENTRY_A}"]])
+        self.assertTrue(result.identical, result.report())
+
+    def test_rerun_is_identical(self):
+        col = FakeCollection([[f"<style>{SHEET_A1}</style>{ENTRY_A}"],
+                              [f"<style>{SHEET_A2}</style>{ENTRY_A}"]])
+        run(col)
+        self.assertTrue(dedup.plan_notetype(col, col.notetype()).check.identical)
+
+    def test_selector_broken_by_br_never_applies(self):
+        self.assertEqual(dedup.parse_rules("<br>.a b { color: red; } .c { margin: 0; }"),
+                         [dedup.make_rule(".c", "margin: 0")])
 
 
 if __name__ == "__main__":
