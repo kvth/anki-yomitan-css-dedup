@@ -1,0 +1,7 @@
+{
+  "name": "Yomitan CSS Dedup",
+  "package": "yomitan_css_dedup",
+  "human_version": "0.1",
+  "min_point_version": 50,
+  "homepage": "https://github.com/kvth/anki-yomitan-css-dedup"
+}

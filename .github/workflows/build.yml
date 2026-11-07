@@ -1,0 +1,37 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Test and build the add-on
+        run: ./build-addon.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yomitan-css-dedup.ankiaddon
+          path: dist/yomitan-css-dedup.ankiaddon
+          if-no-files-found: error
+
+      - name: Create release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME" dist/yomitan-css-dedup.ankiaddon
+          --title "$GITHUB_REF_NAME" --generate-notes
