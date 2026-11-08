@@ -212,6 +212,7 @@ def split_selector_list(selector: str) -> list[str]:
 class RenderCheck:
     """Notes that could render differently, by stylesheet scope."""
     notes_affected: int = 0
+    affected: list = field(default_factory=list)  # ids of the notes that could look different
     # scope ('' = rules not limited to one dictionary) -> notes affected, differing rules
     notes_by_scope: Counter = field(default_factory=Counter)
     rules_by_scope: dict = field(default_factory=dict)
@@ -243,7 +244,7 @@ class RenderChecker:
         self.template_classes = set(re.findall(r"[\w-]+", templates)) | ANKI_CLASSES
         self.rule_cache: dict = {}
         self.old_rules = self.rules_of(old_sheets)
-        self.notes: list = []  # (sheets before, sheets left in the note, classes, dictionaries)
+        self.notes: list = []  # (note id, sheets before, sheets left in the note, classes, dictionaries)
 
     def rules_of(self, sheets) -> set:
         out = set()
@@ -253,16 +254,16 @@ class RenderChecker:
             out |= self.rule_cache[s]
         return out
 
-    def add_note(self, sheets_before: list[str], sheets_after: list[str], fields: list[str]) -> None:
+    def add_note(self, nid: int, sheets_before: list[str], sheets_after: list[str], fields: list[str]) -> None:
         text = "\n".join(without_style_blocks(f) for f in fields)
         classes = {c for attr in CLASS_ATTR_RE.findall(text) for c in attr.split()}
         dicts = {html.unescape(d) for d in DICT_RE.findall(text)}
-        self.notes.append((tuple(sheets_before), tuple(sheets_after), frozenset(classes), frozenset(dicts)))
+        self.notes.append((nid, tuple(sheets_before), tuple(sheets_after), frozenset(classes), frozenset(dicts)))
 
     def check(self, new_sheets: list[str]) -> RenderCheck:
         new_rules = self.rules_of(new_sheets)
         result = RenderCheck()
-        for before_sheets, after_sheets, classes, dicts in self.notes:
+        for nid, before_sheets, after_sheets, classes, dicts in self.notes:
             known = classes | self.template_classes
 
             def applies(rule: Rule) -> bool:
@@ -274,6 +275,7 @@ class RenderChecker:
             if not diff:
                 continue
             result.notes_affected += 1
+            result.affected.append(nid)
             for scope in {r.scope for r in diff}:
                 result.notes_by_scope[scope] += 1
             for r in diff:
@@ -380,7 +382,7 @@ def plan_notetype(col, notetype: dict) -> Plan:
                 dirty = True
         if dirty:
             plan.changed_notes.append(note)
-        checker.add_note(before, after, note.fields)
+        checker.add_note(note.id, before, after, note.fields)
 
     sheets_body = "\n".join(SHEET_HEADER.format(k) + "\n" + v for k, v in sheets.items())
     plan.new_css = set_section(css, sheets_body)
@@ -388,6 +390,22 @@ def plan_notetype(col, notetype: dict) -> Plan:
     plan.css_growth = len(plan.new_css.encode()) - len(css.encode())
     plan.check = checker.check(list(sheets.values()))
     return plan
+
+
+@dataclass
+class NoteTypeStats:
+    name: str
+    notes: int
+    with_styles: int  # notes that contain Yomitan dictionary stylesheets
+
+
+def note_type_stats(col) -> list[NoteTypeStats]:
+    """All note types, those with notes containing Yomitan stylesheets first."""
+    counts = {mid: (n, s or 0) for mid, n, s in col.db.all(
+        "select mid, count(), sum(flds like '%<style%' and flds like '%data-dictionary=%') "
+        "from notes group by mid")}
+    stats = [NoteTypeStats(nt.name, *counts.get(nt.id, (0, 0))) for nt in col.models.all_names_and_ids()]
+    return sorted(stats, key=lambda s: (-s.with_styles, s.name.lower()))
 
 
 def apply_plan(col, plan: Plan) -> None:

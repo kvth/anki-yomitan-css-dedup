@@ -155,6 +155,7 @@ class RenderCheckTests(unittest.TestCase):
                             + [[f"<style>{SHEET_A2}</style>{ENTRY_A}"]])
         self.assertEqual(result.notes_affected, 1)
         self.assertEqual(result.notes_by_scope["A"], 1)
+        self.assertEqual(result.affected, [2])
 
     def test_global_rules_removed_from_note_type_css_are_reported(self):
         # An earlier version moved a global rule into the note type CSS; replacing
@@ -191,6 +192,28 @@ class RenderCheckTests(unittest.TestCase):
     def test_selector_broken_by_br_never_applies(self):
         self.assertEqual(dedup.parse_rules("<br>.a b { color: red; } .c { margin: 0; }"),
                          [dedup.make_rule(".c", "margin: 0")])
+
+
+class NoteTypeStatsTests(unittest.TestCase):
+    def test_types_with_yomitan_stylesheets_come_first(self):
+        class NameId:
+            def __init__(self, id, name):
+                self.id, self.name = id, name
+
+        class Col:
+            class db:
+                @staticmethod
+                def all(sql):
+                    return [(1, 10, 0), (2, 5, 4)]
+
+            class models:
+                @staticmethod
+                def all_names_and_ids():
+                    return [NameId(1, "Basic"), NameId(2, "Yomitan"), NameId(3, "Empty")]
+
+        stats = dedup.note_type_stats(Col())
+        self.assertEqual([(s.name, s.notes, s.with_styles) for s in stats],
+                         [("Yomitan", 5, 4), ("Basic", 10, 0), ("Empty", 0, 0)])
 
 
 if __name__ == "__main__":

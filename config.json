@@ -1,4 +1,5 @@
 {
   "note_types": ["Yomitan"],
-  "backup_before_apply": true
+  "backup_before_apply": true,
+  "tag_changed_notes": true
 }

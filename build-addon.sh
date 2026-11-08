@@ -4,10 +4,10 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-FILES=(__init__.py dedup.py manifest.json config.json config.md user_files/README.txt LICENSE README.md)
+FILES=(__init__.py dedup.py config_dialog.py summary_dialog.py visual.py manifest.json config.json config.md user_files/README.txt LICENSE README.md)
 OUT=dist/yomitan-css-dedup.ankiaddon
 
-python3 -m py_compile __init__.py dedup.py cli.py
+python3 -m py_compile __init__.py dedup.py config_dialog.py summary_dialog.py visual.py cli.py
 python3 -m unittest discover -s tests -q
 
 mkdir -p dist

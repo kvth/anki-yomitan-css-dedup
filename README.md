@@ -53,9 +53,16 @@ for notes with entries from it, rules needing a class only if the class appears
 in the note or the card template. Rules browsers ignore anyway (broken by a stray
 `<br>`) are skipped.
 
-The add-on shows the result in the confirmation dialog and defaults to "No" when
-cards could change. `cli.py --apply` refuses in that case unless you add
-`--ignore-check`.
+The render check lists every card whose CSS rules change, but most of those changes
+have no visible effect. The add-on's **Compare visually…** button goes one step further:
+it renders each listed note before and after in a hidden window (with Anki's own browser
+engine, images and fonts) and compares the computed styles of every element: colours,
+fonts, sizes, borders, margins and so on. A difference only counts if it is still there
+after a second look and after reloading both versions, so card scripts that are still
+running don't cause false alarms. On a collection of 7,709 notes, 1,266 were listed by
+the render check and 12 really looked different.
+
+`cli.py --apply` refuses when the render check lists notes, unless you add `--ignore-check`.
 
 ## Install as an Anki add-on
 
@@ -79,14 +86,24 @@ file the same way (**Tools → Add-ons → Install from file…**).
 
 ## Use the add-on
 
-1. **Tools → Yomitan CSS Dedup…** analyses your notes and shows how much it would save.
-2. Confirm to apply. Anki makes a backup first, and **Edit → Undo** reverts it.
-3. Run **Tools → Check Database** to shrink the collection file, then sync.
+1. **Tools → Yomitan CSS Dedup → Shrink notes…** analyses your notes and shows how much
+   it would save and which notes could look different (see [Render check](#render-check)).
+2. Optional: **Compare visually…** renders each of those notes before and after and lists
+   the ones that really look different (a few minutes for ~1,000 notes). Double-click one,
+   or use **Show in Browser**, to look at it. The window stays open meanwhile.
+3. **Apply**. Anki makes a backup first, and **Edit → Undo** reverts everything. The notes
+   that look different are tagged `yomitan-css-dedup::changed` (without a visual comparison:
+   all listed notes, `yomitan-css-dedup::check`), so you can check them later with
+   **Tools → Yomitan CSS Dedup → Show changed notes**. Remove the tag when you're done.
+4. Run **Tools → Check Database** to shrink the collection file, then sync.
 
 Yomitan keeps adding stylesheets to new cards, so run it again from time to time.
 
-Settings (**Tools → Add-ons → Yomitan CSS Dedup → Config**): see [config.md](config.md).
-The default note type is `Yomitan`; add the names of your note types if they differ.
+**Settings** (**Tools → Yomitan CSS Dedup → Settings…**, or the Config button in the
+add-on manager): pick the note types to process. The list shows how many notes of each
+note type contain Yomitan stylesheets, and **Select detected** picks exactly those. You
+can also turn off the backup before applying and open the folder with the saved CSS copies.
+The default note type is `Yomitan`.
 
 ## Run standalone (without installing the add-on)
 
@@ -144,7 +161,8 @@ python3 -m unittest discover tests   # tests only
 Pushing a `v*` tag builds the add-on on GitHub Actions and attaches it to a release.
 
 `dedup.py` holds the logic and only uses the `anki` collection API.
-`__init__.py` is the add-on wrapper, `cli.py` the command line wrapper.
+`__init__.py` is the add-on wrapper, with `summary_dialog.py`, `config_dialog.py` and
+`visual.py` (the visual comparison); `cli.py` is the command line wrapper.
 
 ## License
 
